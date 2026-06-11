@@ -1,0 +1,7 @@
+*.iso
+secrets
+autounattend.xml
+.iso_mounted
+.postactivate
+ssl
+oem

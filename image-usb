@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -ue
+
+iso_drive=$(powershell '.\iso-drive.ps1')
+usb_drive=$(powershell '.\usb-drive.ps1')
+
+powershell '.\copy-tree.ps1' -Source "${iso_drive}:\\" -Destination "${usb_drive}:\\" -Exclude install.wim
+powershell '.\extract-wim.ps1' -ISODrive $iso_drive -USBDrive $usb_drive

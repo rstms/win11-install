@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -ue
+
+encode() {
+    powershell -c "[Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes(\"$1\"))"
+}
+
+detect_unexpanded_macro() {
+    awk '
+	/^[[:space:]]*<!--https:.*-->$/{
+	    next;
+	}
+	/__[A-Z][A-Z_]*__/{
+	    print "unexpanded macro: "$0 >"/dev/stderr"; 
+	    exit 1
+	}
+    '
+}
+
+args=""
+for file in $(find secrets/$HOST -type f -name 'XML_*'); do
+    macro="__$(basename $file | sed 's/^XML_//')__"
+    read value <$file
+    case $macro in 
+	__PRODUCT_KEY__) args="${args} -e 's/XXXXX-XXXXX-XXXXX-XXXXX-XXXXX/$value/g'" ;;
+	__ADMINISTRATOR_PASSWORD__) 
+	    # autounattend.xml contains the admin password encoded with both suffixes
+	    args="${args} -e 's/$(encode "${macro}Password")/$(encode "${value}Password")/g'"
+	    args="${args} -e 's/$(encode "${macro}AdministratorPassword")/$(encode "${value}AdministratorPassword")/g'"
+	    ;;
+	__PASSWORD__) args="${args} -e 's/$(encode "${macro}Password")/$(encode "${value}Password")/g'" ;;
+	*) args="${args} -e 's/${macro}/${value}/g'" ;;
+    esac
+done
+
+eval sed $args | detect_unexpanded_macro

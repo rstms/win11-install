@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+set -ue
+
+TARGET_DISK_NAME=${TARGET_DISK_NAME:-}
+
+if [ -n "$TARGET_DISK_NAME" ]; then
+    TARGET_DISK_NUMBER=$(powershell -c 'Get-Disk | Format-Table' | awk "/^[0-9].*[[:space:]]$TARGET_DISK_NAME[[:space:]]/{print \$1}")
+    if ! [[ "$TARGET_DISK_NUMBER" =~ ^[0-9][0-9]*$ ]]; then
+	echo >&2 "Target disk name '$TARGET_DISK_NAME' not found"
+	exit 1
+    fi
+else
+    powershell -c 'Get-Disk | Format-Table'
+    read -p 'Enter target disk number: ' TARGET_DISK_NUMBER
+fi
+
+powershell -c "Clear-Disk -Number $TARGET_DISK_NUMBER -RemoveData -RemoveOEM"
+
+partition=$(powershell -c "New-Partition -DiskNumber $TARGET_DISK_NUMBER -MbrType FAT32 -Size 32GB -IsActive -AssignDriveLetter | Format-List")
+usb_drive=$(awk -F'[:[:space:]]*' <<<$partition '/^DriveLetter[[:space:]]/{print $2}')
+powershell -c "Format-Volume -NewFileSystemLabel WIN11SETUP -FileSystem FAT32 -DriveLetter $usb_drive"
+
+iso_volume=$(powershell -c "Get-Volume | Where-Object { \$_.DriveType -eq 'CD-ROM' -and \$_.OperationalStatus -eq 'OK' } | Format-List")
+iso_drive=$(awk -F'[:[:space:]]*' <<<$iso_volume '/^DriveLetter[[:space:]]/{print $2}')
+
+powershell '.\copy-tree.ps1' -Source "${iso_drive}:\\" -Destination "${usb_drive}:\\" -Exclude install.wim
+powershell '.\extract-wim.ps1' -ISODrive $iso_drive -USBDrive $usb_drive
+
+powershell '.\copy-tree.ps1' -Source '.\oem' -Destination "'${usb_drive}:\\\$OEM\$\\'"
+powershell -c "Copy-Item -Path .\\autounattend.xml -Destination ${usb_drive}:\\autounattend.xml"
