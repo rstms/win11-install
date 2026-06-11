@@ -67,6 +67,8 @@ $(oem_dir)/bootstrap.cmd: $(oem_dir)
 	echo >'$@' 'cd C:\users\public\rstms'
 	echo >>'$@' 'msiexec /package c:\users\public\rstms\reliance-anydesk-client.msi /passive'
 	echo >>'$@' 'c:\users\public\rstms\Winhance.Installer.exe /NOICONS /ALLUSERS /SILENT'
+	echo >>'$@' 'winget install Microsoft.Sysinternals.PsTools'
+	echo >>'$@' 'psshutdown -nobanner -t 3 -r'
 
 $(oem_dir)/customize.winhance: $(oem_dir)
 	cp $(notdir $@) '$@'

@@ -44,8 +44,6 @@ https://winhance.net/
 https://learn.microsoft.com/en-us/powershell/
 https://www.tenforums.com/tutorials/96159-powershell-scripting-create-usb-install-media-windows-10-a.html
 
-## manual post install
+## post install manual procedures
 
-- run winhancd & import C:\Users\Public\rstms\debloat.winhance
-
-# (replace everything in brackets)
+- run winhance; import C:\Users\Public\rstms\debloat.winhance
