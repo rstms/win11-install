@@ -60,7 +60,7 @@ $(winiso):
 	$(ps) -c 'Get-FileHash -LiteralPath ".\$@"'
 
 $(oem_dir)/reliance-anydesk-client.msi: $(oem_dir)
-	scp rigel:reliance-anydesk-client.msi '$@'
+	scp beaker:$$(ssh beaker ls -t Downloads/anydesk*.msi | head -1) '$@'
 
 $(oem_dir)/Winhance.Installer.exe: $(oem_dir)
 	curl -L https://github.com/memstechtips/Winhance/releases/latest/download/Winhance.Installer.exe -o '$@'
@@ -83,7 +83,7 @@ $(oem_dir)/update-anydesk.ps1: $(oem_dir)
 	
 clean: umount
 	rm -f autounattend.xml .iso_mounted
+	rm -rf oem
 
 sterile: clean
 	rm -f $(winiso)
-	rm -rf oem 
