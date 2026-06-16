@@ -11,7 +11,8 @@ installers = \
 	$(oem_dir)/Winhance.Installer.exe \
 	$(oem_dir)/bootstrap.cmd \
 	$(oem_dir)/customize.winhance \
-	$(oem_dir)/nircomline.exe
+	$(oem_dir)/update-anydesk.ps1 \
+	$(oem_dir)/update-anydesk.lnk
 
 default:
 	@echo
@@ -74,8 +75,11 @@ $(oem_dir)/bootstrap.cmd: $(oem_dir)
 $(oem_dir)/customize.winhance: $(oem_dir)
 	cp $(notdir $@) '$@'
 
-$(oem_dir)/nircomline.exe: $(oem_dir)
-	cd $(oem_dir) && curl -LO https://www.nirsoft.net/utils/nircomline.zip && unzip nircomline.zip && rm nircomline.zip
+$(oem_dir)/update-anydesk.lnk: $(oem_dir)
+	cp $(notdir $@) '$@'
+	
+$(oem_dir)/update-anydesk.ps1: $(oem_dir)
+	cp $(notdir $@) '$@'
 	
 clean: umount
 	rm -f autounattend.xml .iso_mounted
