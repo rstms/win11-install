@@ -2,8 +2,17 @@
 
 set -ue
 
+log() {
+    echo >&2 "$@"
+}
+
 iso_drive=$(powershell '.\iso-drive.ps1')
+#log "iso_drive=$iso_drive"
+[ -n "$iso_drive" ]
+
 usb_drive=$(powershell '.\usb-drive.ps1')
+#log "usb_drive=$usb_drive"
+[ -n "$usb_drive" ]
 
 powershell '.\copy-tree.ps1' -Source "${iso_drive}:\\" -Destination "${usb_drive}:\\" -Exclude install.wim
-powershell '.\extract-wim.ps1' -ISODrive $iso_drive -USBDrive $usb_drive
+powershell '.\extract-wim.ps1' -ISODrive ${iso_drive} -USBDrive ${usb_drive}

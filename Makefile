@@ -19,7 +19,8 @@ default:
 	@echo Targets:
 	@echo
 	@echo format - write bootable USB installer image
-	@echo update - rewrite USB $OEM$ directory and autounattend.xml
+	@echo image - write bootable USB installer image
+	@echo 'update - rewrite USB $$OEM$$ directory and autounattend.xml'
 	@echo
 
 
@@ -38,6 +39,9 @@ format:	.iso_mounted
 
 image: .iso_mounted 
 	./image-usb
+
+extract: 
+	./extract-wim
 
 update: autounattend.xml oem
 	./update-usb

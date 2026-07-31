@@ -1,3 +1,5 @@
+
+$ErrorActionPreference = "Stop"
 try {
     Get-Volume | Where-Object { 
 	($_.DriveType -eq "CD-ROM") -and ($_.OperationalStatus -eq "OK") -and ($_.FileSystem -eq "UDF")
@@ -6,6 +8,6 @@ try {
 	exit 0
     }
 } catch {
-    Write-Output $_ -ErrorAction stop
+    exit 1
 }
 exit 1

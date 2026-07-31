@@ -2,7 +2,13 @@
 
 set -ue
 
+log () {
+    echo >&2 "$@"
+}
+
 usb_drive=$(powershell './usb-drive.ps1')
-powershell -c "Remove-Item -Path '${usb_drive}:\\\$OEM\$\\' -Recurse -Force"
+[ -n "$usb_drive" ]
+
+powershell -c "if (Test-Path '${usb_drive}:\\\$OEM\$\\') { Remove-Item -Path '${usb_drive}:\\\$OEM\$\\' -Recurse -Force }"
 powershell '.\copy-tree.ps1' -Source '.\oem' -Destination "'${usb_drive}:\\\$OEM\$\\'"
 powershell -c "Copy-Item -Path .\\autounattend.xml -Destination ${usb_drive}:\\autounattend.xml"

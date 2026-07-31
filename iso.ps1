@@ -6,16 +6,16 @@ param (
     [string]$IsoImage
 )
     
-try {
+$ErrorActionPreference = "Stop"
     
-    if ( $IsoImage -eq '' ) {
-        $IsoImage = Get-ChildItem -Path . -Filter *.iso | Select-Object -First 1
-    }
-    if ( $IsoImage -ne '' ) {
-        $IsoImage = (Resolve-Path -Path $IsoImage)
-    }
-    
-    if ($Mount -or $Dismount) {
+if ( $IsoImage -eq '' ) {
+    $IsoImage = Get-ChildItem -Path . -Filter *.iso | Select-Object -First 1
+}
+if ( $IsoImage -ne '' ) {
+    $IsoImage = (Resolve-Path -Path $IsoImage)
+}
+
+if ($Mount -or $Dismount) {
 	Get-Volume | Where-Object { $_.DriveType -eq 'CD-ROM' -and $_.OperationalStatus -eq 'OK' } | ForEach-Object {
 	    $DriveLetter = $_.DriveLetter
 	    $DevicePath = $_.Path.TrimEnd('\')
@@ -29,13 +29,13 @@ try {
 		    $result = Dismount-DiskImage -DevicePath $DevicePath
 		} 
 	    }
-        }
-        if ($Mount) {
-	   $result = Mount-DiskImage -ImagePath $IsoImage
-        }
     }
-    
-    if ($Show -or $Drive) {
+    if ($Mount) {
+	   $result = Mount-DiskImage -ImagePath $IsoImage
+    }
+}
+
+if ($Show -or $Drive) {
 	Get-Volume | Where-Object { $_.DriveType -eq 'CD-ROM' -and $_.OperationalStatus -eq 'OK' } | ForEach-Object {
 	    $DriveLetter = $_.DriveLetter
 	    $DevicePath = $_.Path.TrimEnd('\')
@@ -46,8 +46,4 @@ try {
 		Write-Host $_.DriveLetter
 	   }
 	}
-    }
-} 
-catch {
-    Write-Output $_ -ErrorAction stop
 }

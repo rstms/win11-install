@@ -43,4 +43,3 @@ $args = "/package $installer /passive"
 
 Write-Host "Installing '$args'..."
 Start-Process -FilePath "msiexec.exe" -ArgumentList "$args" -Wait
-

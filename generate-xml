@@ -2,6 +2,20 @@
 
 set -ue
 
+log() {
+    echo >&2 "$@"
+}
+
+cleanup() {
+    if [ -n "$spool_file" ]; then
+	rm -f $spool_file
+    fi
+}
+trap cleanup EXIT
+
+spool_file=$(mktemp spool-XXXXXXX.xml)
+cat ->$spool_file
+
 encode() {
     powershell -c "[Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes(\"$1\"))"
 }
@@ -18,20 +32,47 @@ detect_unexpanded_macro() {
     '
 }
 
+addcmd() {
+    log "expanding $file"
+    #log "spool_file=$spool_file"
+    #log "value=$value"
+    #log "sedcmd=${sedcmd}"
+    eval sed <$spool_file >out.$macro $sedcmd
+    #diff -b $input_file out.$macro >diff.$macro || true
+    #log "diff ok"
+    mv out.$macro $spool_file
+}
+
+
+log spool_file=$spool_file
+cat ->$spool_file
+
 args=""
 for file in $(find secrets/$HOST -type f -name 'XML_*'); do
     macro="__$(basename $file | sed 's/^XML_//')__"
     read value <$file
     case $macro in 
-	__PRODUCT_KEY__) args="${args} -e 's/XXXXX-XXXXX-XXXXX-XXXXX-XXXXX/$value/g'" ;;
+	__PRODUCT_KEY__)
+	    sedcmd="-e 's/XXXXX-XXXXX-XXXXX-XXXXX-XXXXX/$value/g'"
+	    addcmd
+	    ;;
 	__ADMINISTRATOR_PASSWORD__) 
 	    # autounattend.xml contains the admin password encoded with both suffixes
-	    args="${args} -e 's/$(encode "${macro}Password")/$(encode "${value}Password")/g'"
-	    args="${args} -e 's/$(encode "${macro}AdministratorPassword")/$(encode "${value}AdministratorPassword")/g'"
+	    sedcmd="-e 's/$(encode "${macro}Password")/$(encode "${value}Password")/g'"
+	    addcmd
+	    sedcmd="-e 's/$(encode "${macro}AdministratorPassword")/$(encode "${value}AdministratorPassword")/g'"
+	    addcmd
 	    ;;
-	__PASSWORD__) args="${args} -e 's/$(encode "${macro}Password")/$(encode "${value}Password")/g'" ;;
-	*) args="${args} -e 's/${macro}/${value}/g'" ;;
+	__PASSWORD__) 
+	    sedcmd="-e 's/$(encode "${macro}Password")/$(encode "${value}Password")/g'"
+	    addcmd
+	    ;;
+	*) 
+	    sedcmd="-e 's/${macro}/${value}/g'"
+	    addcmd
+	    ;;
     esac
 done
 
-eval sed $args | detect_unexpanded_macro
+cat $spool_file
+#| detect_unexpanded_macro

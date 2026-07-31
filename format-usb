@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 
-set -ue
+set -ueo pipefail
 
 TARGET_DISK_NAME=${TARGET_DISK_NAME:-}
 
+log() {
+    echo >&2 "$@"
+}
+
 if [ -n "$TARGET_DISK_NAME" ]; then
+    log "TARGET_DISK_NAME=$TARGET_DISK_NAME"
     TARGET_DISK_NUMBER=$(powershell -c 'Get-Disk | Format-Table' | awk "/^[0-9].*[[:space:]]$TARGET_DISK_NAME[[:space:]]/{print \$1}")
     if ! [[ "$TARGET_DISK_NUMBER" =~ ^[0-9][0-9]*$ ]]; then
 	echo >&2 "Target disk name '$TARGET_DISK_NAME' not found"
@@ -15,17 +20,32 @@ else
     read -p 'Enter target disk number: ' TARGET_DISK_NUMBER
 fi
 
+log "TARGET_DISK_NUMBER=$TARGET_DISK_NUMBER"
+
 powershell -c "Clear-Disk -Number $TARGET_DISK_NUMBER -RemoveData -RemoveOEM"
 
 partition=$(powershell -c "New-Partition -DiskNumber $TARGET_DISK_NUMBER -MbrType FAT32 -Size 32GB -IsActive -AssignDriveLetter | Format-List")
+log "partition=$partition"
+[ -n "$partition" ]
+
 usb_drive=$(awk -F'[:[:space:]]*' <<<$partition '/^DriveLetter[[:space:]]/{print $2}')
+log "usb_drive=$usb_drive"
+[ -n "$usb_drive" ]
+
 powershell -c "Format-Volume -NewFileSystemLabel WIN11SETUP -FileSystem FAT32 -DriveLetter $usb_drive"
 
 iso_volume=$(powershell -c "Get-Volume | Where-Object { \$_.DriveType -eq 'CD-ROM' -and \$_.OperationalStatus -eq 'OK' } | Format-List")
+log "iso_volume=$iso_volume"
+[ -n "$iso_volume" ]
+
 iso_drive=$(awk -F'[:[:space:]]*' <<<$iso_volume '/^DriveLetter[[:space:]]/{print $2}')
+log "iso_drive=$iso_drive"
+[ -n "$iso_drive" ]
 
-powershell '.\copy-tree.ps1' -Source "${iso_drive}:\\" -Destination "${usb_drive}:\\" -Exclude install.wim
-powershell '.\extract-wim.ps1' -ISODrive $iso_drive -USBDrive $usb_drive
+# image-usb
+#powershell '.\copy-tree.ps1' -Source "${iso_drive}:\\" -Destination "${usb_drive}:\\" -Exclude install.wim
+#powershell '.\extract-wim.ps1' -ISODrive $iso_drive -USBDrive $usb_drive
 
-powershell '.\copy-tree.ps1' -Source '.\oem' -Destination "'${usb_drive}:\\\$OEM\$\\'"
-powershell -c "Copy-Item -Path .\\autounattend.xml -Destination ${usb_drive}:\\autounattend.xml"
+# update-usb
+#powershell '.\copy-tree.ps1' -Source '.\oem' -Destination "'${usb_drive}:\\\$OEM\$\\'"
+#powershell -c "Copy-Item -Path .\\autounattend.xml -Destination ${usb_drive}:\\autounattend.xml"
