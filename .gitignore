@@ -6,3 +6,8 @@ autounattend.xml
 ssl
 oem
 cruft
+.env
+.partition
+.usb_formatted
+assets
+notes

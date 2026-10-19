@@ -47,3 +47,18 @@ https://www.tenforums.com/tutorials/96159-powershell-scripting-create-usb-instal
 ## post install manual procedures
 
 - run winhance; import C:\Users\Public\rstms\debloat.winhance
+
+## assets directory
+The ./assets directory is not included in the repo.  These files are present
+in the development directory as of 2026-10-18
+```
+assets/bin/sgdisk64.exe
+assets/iso/Windows11_Client_x64_en-us_26300_9457.iso
+assets/oem/Users/Public/rstms/bootstrap.cmd
+assets/oem/Users/Public/rstms/customize.winhance
+assets/oem/Users/Public/rstms/reliance-anydesk-client.msi
+assets/oem/Users/Public/rstms/update-anydesk.lnk
+assets/oem/Users/Public/rstms/update-anydesk.ps1
+assets/oem/Users/Public/rstms/Winhance.Installer.exe
+assets/template.xml
+```

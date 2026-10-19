@@ -1,93 +1,93 @@
 # win11 custom setup USB makefile
 
-winiso = Win11_25H2_English_x64_v2.iso
+psh = dotenv powershell.exe -ExecutionPolicy RemoteSigned '.\build-usb-installer.ps1'
 
-oem_dir = oem/$$1/Users/Public/rstms
-ps = powershell.exe -ExecutionPolicy RemoteSigned 
-psrun = $(ps) '.\$(1)' $(2)
+winiso = assets/iso/Win11_25H2_English_x64_v2.iso
+oem_dir = assets/oem/Users/Public/rstms
 
-installers = \
-	$(oem_dir)/reliance-anydesk-client.msi \
-	$(oem_dir)/Winhance.Installer.exe \
-	$(oem_dir)/bootstrap.cmd \
-	$(oem_dir)/customize.winhance \
-	$(oem_dir)/update-anydesk.ps1 \
-	$(oem_dir)/update-anydesk.lnk
+oem_filenames = \
+  Winhance.Installer.exe \
+  bootstrap.cmd \
+  customize.winhance \
+  reliance-anydesk-client.msi \
+  update-anydesk.lnk \
+  update-anydesk.ps1
+
+oem_files = $(foreach f,$(oem_filenames),$(oem_dir)/$(f))
 
 default:
 	@echo
 	@echo Targets:
 	@echo
-	@echo format - write bootable USB installer image
-	@echo image - write bootable USB installer image
-	@echo 'update - rewrite USB $$OEM$$ directory and autounattend.xml'
-	@echo
+	@echo format - select target USB and format
+	@echo sync - sync target USB filesystems with source ISO
+	@echo update - customize target USB with autounattend.xml and OEM directory
 
+lsusb:
+	@$(psh) lsusb
 
-oem: $(installers)
+generate:
+	$(psh) generate
 
-$(oem_dir):
-	mkdir -p '$(oem_dir)'
+build: format update
 
-autounattend.xml: template.xml
-	./generate-xml <$< >$@
+rebuild:
+	$(psh) build
 
-build: format image update
+.usb_formatted: .iso_mounted
+	$(psh) format
+	@touch $@
 
-format:	.iso_mounted
-	./format-usb
+reformat: 
+	$(psh) format
+	@touch .usb_formatted
 
-image: .iso_mounted 
-	./image-usb
+format: .usb_formatted
 
-extract: 
-	./extract-wim
+sync: .usb_formatted
+	$(psh) sync -no_oem -no_xml
 
-update: autounattend.xml oem
-	./update-usb
+update: .usb_formatted assets/template.xml $(oem_files)
+	$(psh) update
 
 .iso_mounted: $(winiso)
-	$(call psrun,iso.ps1,-Mount -Drive) >$@
+	$(psh) mount-iso
+	@touch $@
 
 mount: .iso_mounted
 
 umount:
-	$(call psrun,iso-drive.ps1,) && $(call psrun,iso.ps1,-Dismount) || true
+	$(psh) dismount-iso -quiet || true
 	rm -f .iso_mounted
 
 show:
-	$(call psrun,iso.ps1,-Show)
+	$(psh) show-iso
 
 $(winiso):
-	scp rigel:iso/$(winiso) .
+	mkdir -p $(dir $(winiso))
+	scp rigel:iso/$(notdir $(winiso)) .
 	$(ps) -c 'Unblock-File -LiteralPath ".\$@"'
 	$(ps) -c 'Get-FileHash -LiteralPath ".\$@"'
 
-$(oem_dir)/reliance-anydesk-client.msi: $(oem_dir)
-	scp beaker:$$(ssh beaker ls -t Downloads/anydesk*.msi | head -1) '$@'
+$(oem_dir)/reliance-anydesk-client.msi:
+	mkdir -p $(oem_dir)
+	scp beaker:$$(ssh beaker ls -t Downloads/anydesk*.msi | head -1) $@
 
-$(oem_dir)/Winhance.Installer.exe: $(oem_dir)
-	curl -L https://github.com/memstechtips/Winhance/releases/latest/download/Winhance.Installer.exe -o '$@'
+$(oem_dir)/Winhance.Installer.exe:
+	mkdir -p $(oem_dir)
+	curl -L https://github.com/memstechtips/Winhance/releases/latest/download/Winhance.Installer.exe -o $@
 
-$(oem_dir)/bootstrap.cmd: $(oem_dir)
+$(oem_dir)/bootstrap.cmd:
+	mkdir -p $(oem_dir)
 	echo >'$@' 'cd C:\users\public\rstms'
 	echo >>'$@' 'msiexec /package c:\users\public\rstms\reliance-anydesk-client.msi /passive'
 	echo >>'$@' 'c:\users\public\rstms\Winhance.Installer.exe /NOICONS /ALLUSERS /SILENT'
-	echo >>'$@' 'winget install Microsoft.Sysinternals.PsTools'
-	echo >>'$@' 'psshutdown -nobanner -t 3 -r'
+	echo >>'$@' 'winget install --silent Microsoft.Sysinternals.PsTools'
+	echo >>'$@' 'psshutdown -accepteula -nobanner -t 3 -r'
 
-$(oem_dir)/customize.winhance: $(oem_dir)
-	cp $(notdir $@) '$@'
-
-$(oem_dir)/update-anydesk.lnk: $(oem_dir)
-	cp $(notdir $@) '$@'
-	
-$(oem_dir)/update-anydesk.ps1: $(oem_dir)
-	cp $(notdir $@) '$@'
-	
 clean: umount
-	rm -f autounattend.xml .iso_mounted
-	rm -rf oem
+	rm -f .iso_mounted .usb_formatted assets/oem/bootstrap.cmd
 
 sterile: clean
-	rm -f $(winiso)
+	rm -f $(winiso) assets/oem/reliance-anydesk-client.msi assets/oem/Winhance.Installer.exe
+
