@@ -11,3 +11,6 @@ cruft
 .usb_formatted
 assets
 notes
+dist
+staging
+.cruft

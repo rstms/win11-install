@@ -4,9 +4,15 @@ param (
     [string]$TargetDiskName,
     [string]$TargetDiskNumber,
     [string]$IsoImage,
-    [string]$xml_template = ".\assets\template.xml",
-    [string]$oem_dir = ".\assets\oem",
+    [string]$xml_template_file = ".\assets\template.xml",
+    [string]$xml_response_file = ".\staging\autounattend.xml",
+    [string]$split_wim_path = ".\staging\wim\",
+    [string]$iso_staging_path = ".\staging\setup\",
+    [string]$iso_dist_path = ".\dist\",
+    [string]$oem_src_path = ".\assets\oem\",
     [string]$secrets_root = ".\secrets",
+    [string]$generator_dll = ".\assets\bin\UnattendGenerator.dll",
+    [string]$default_wifi_security_type = "WPA3SAE",
     [string]$hostname = ${env:HOST},
     [int]$fat32_size = -1,
     [int]$ntfs_size = -1,
@@ -24,7 +30,8 @@ if ($ntfs_size -lt 0) {
     $ntfs_size = if (${env:NTFS_SIZE}) { [int](${env:NTFS_SIZE}) } else { 16 }
 }
 
-$sgdisk_bin = "assets\bin\sgdisk64.exe"
+$sgdisk_bin = ".\assets\bin\sgdisk64.exe"
+$oscdimg_bin = ".\assets\bin\oscdimg.exe"
 
 $global:usb_id_lines = $null
 
@@ -319,17 +326,22 @@ function Robo-Copy {
 	[Parameter(Mandatory=$true)][string]$SrcDir,
 	[Parameter(Mandatory=$true)][string]$DstDir,
 	[string]$Files,
-	[string]$Options
+	[string]$Options,
+	[switch]$NoPurge
     )
     $robo_cmd = "${SrcDir} ${DstDir}"
     if ($Files) {
 	$robo_cmd = "${robo_cmd} ${Files}"
     }
-    $robo_cmd = "${robo_cmd} /E /PURGE /J /COPYALL /DCOPY:DAT /V /ETA"
+    if ($NoPurge) {
+	$purge = ""
+    } else {
+	$purge = "/PURGE"
+    }
+    $robo_cmd = "${robo_cmd} /E ${purge} /J /COPYALL /DCOPY:DAT /V /ETA"
     if ($Options) {
 	$robo_cmd = "${robo_cmd} ${Options}"
     }
-	    
     return Run-Command -FilePath "${env:SYSTEMROOT}\system32\robocopy.exe" -ArgumentList $robo_cmd -SuccessExitCode 3
 }
 
@@ -358,13 +370,10 @@ function Run-Command {
     if ($exit_code -gt $SuccessExitCode) {
 	Write-Error "${FilePath} failed with exit code ${exit_code}"
     }
+    return $proc.Stdout
 }
 
-function Update-USB-Files {
-    param (
-	[Parameter(Mandatory=$true)][int]$DiskNumber
-    )
-
+function Mounted-ISO-Path {
     if (Get-ISO-Volumes -match_image) {
 	$mounted = $false
     } else {
@@ -374,44 +383,72 @@ function Update-USB-Files {
 
     $iso_drive_letter = (Get-ISO-Volumes -match_image -require_one).DriveLetter
     $iso_root = Verified-Directory "${iso_drive_letter}:\"
-    $usb_drive_letters = Get-USB-Drive-Letters $DiskNumber
+    return $iso_root
+}
 
+function Update-USB-Files {
+    param (
+	[Parameter(Mandatory=$true)][int]$DiskNumber
+    )
+
+    $iso_root = (Mounted-ISO-Path)
+    Confirm-Action "iso_root=${iso_root}"
+
+    $usb_drive_letters = Get-USB-Drive-Letters $DiskNumber
     if ($fat32_size -gt 0) {
 	$fat32_root = Verified-Directory "$($usb_drive_letters.FAT32):\"
-	$fat32_oem = "${fat32_root}`$OEM`$"	
 	if ($ntfs_size -gt 0) {
-	    Robo-Copy $iso_root $fat32_root -Options "/XD sources /XD ${fat32_oem}"
+	    Robo-Copy $iso_root $fat32_root -Options "/XD sources"
 	    Robo-Copy (Verified-Directory "${iso_root}sources") (Verified-Directory "${fat32_root}sources" -Create) -Files "boot.wim"
 	} else {
 	    Robo-Copy $iso_root $fat32_root -Options "/XF install.wim"
-	    Extract-WIM -ISODrive $iso_drive_letter -USBDrive $usb_drive_letters.FAT32
+	    Extract-Split-WIM
+	    Robo-Copy (Verified-Directory $split_wim_path) (Verified-Directory "${fat32_root}sources\") -NoPurge
 	}
-	if (-not $no_xml) {
-	    Generate-XML-File -OutputPath "${fat32_root}autounattend.xml"
-	}
-	if ($no_oem) {
-	    Remove-Item -Path $fat32_oem -Recurse -Force
-	} else {
-	    Robo-Copy (Verified-Directory $oem_dir) (Verified-Directory "${fat32_oem}\`$1" -Create)
-	}	
+	Customize-Install-Files $fat32_root
     }
 
     if($ntfs_size -gt 0) {
 	$ntfs_root = Verified-Directory "$($usb_drive_letters.NTFS):\"
-	$ntfs_oem = "${ntfs_root}`$OEM`$"	
-	Robo-Copy $iso_root $ntfs_root "/XD sources /XD ${ntfs_oem}"
-	if (-not $no_xml) {
-	    Generate-XML-File -OutputPath "${ntfs_root}autounattend.xml"
-	}
-	if ($no_oem) {
-	    Remove-Item -Path $ntfs_oem -Recurse -Force
-	} else {
-	    Robo-Copy (Verified-Directory $oem_dir) (Verified-Directory "${ntfs_oem}\`$1" -Create)
-	}
+	Robo-Copy $iso_root $ntfs_root
+	Customize-Install-Files $ntfs_root
     }
 
     if ($mounted) {
 	Dismount-ISO
+    }
+}
+
+function Customize-Install-Files {
+    param (
+	[Parameter(Mandatory=$true)][string]$Path
+    )
+    $dst_xml_file = "${Path}autounattend.xml"
+    $dst_oem_dir = "${Path}`$OEM`$"	
+    $src_drivers_dir = ".\assets\drivers\${hostname}\"
+    $dst_drivers_dir = "${Path}`$WinPEDriver`$"	
+    if ($no_xml) {
+	if (Test-Path $dst_xml_file) {
+	    Remove-Item -Path $dst_xml_file -Force
+	}
+    } else {
+	Generate-XML-File $dst_xml_file
+    }
+    if ($no_oem) {
+	if (Test-Path $dst_oem_dir) {
+	    Remove-Item -Path $dst_oem_dir -Recurse -Force
+	}
+    } else {
+	Robo-Copy (Verified-Directory $oem_src_path) (Verified-Directory "${dst_oem_dir}\`$1" -Create)
+    }
+    if ($no_drivers) {
+	if (Test-Path $dst_drivers_dir) {
+	    Remove-Item -Path $dst_drivers_dir -Recurse -Force
+	}
+    } else {
+	if (Test-Path $src_drivers_dir) {
+	    Robo-Copy $src_drivers_dir (Verified-Directory "${dst_drivers_dir}\" -Create)
+	}
     }
 }
 
@@ -486,17 +523,20 @@ function Dismount-ISO {
     Get-ISO-Volumes -require_none
 }
 
-function Extract-WIM {
-    param (
-        [Parameter(Mandatory=$true)][string]$ISODrive,
-        [Parameter(Mandatory=$true)][string]$USBDrive
-    )
-    
-    $ErrorActionPreference = "Stop"
-    $sleepInterval = 5
-    $wimPath = "${ISODrive}:\sources\install.wim"
-    $swmPath = "${USBDrive}:\sources\install*.swm"
-        
+function Extract-Split-WIM {
+
+    $wimPath = "$(Mounted-ISO-Path)sources\install.wim"
+    $swmPath = "${split_wim_path}install*.swm"
+
+    if (-not (Test-Path -Path $split_wim_path)) {
+	New-Item -ItemType Directory -Path $split_wim_path
+    }
+
+    $files = Get-ChildItem -Path $swmPath
+    if ($files) {
+	return
+    }
+
     function HumanSize {
     	param (
     	    [long]$bytes
@@ -519,18 +559,19 @@ function Extract-WIM {
     
     $totalSize = (Get-Item $wimPath).Length
     $total = HumanSize -bytes $totalSize
-    $dismArgs = "/Split-Image /ImageFile:$wimPath /SWMFILE:${USBDrive}:\sources\install.swm /FileSize:2048"
+    $dismArgs = "/Split-Image /ImageFile:$wimPath /SWMFILE:${split_wim_path}install.swm /FileSize:2048"
     $dismProc = (Start-Process -FilePath 'dism.exe' -ArgumentList "${dismArgs}" -PassThru)
     $dismPid = $dismProc.Id
     
     $startTime = (Get-Date)
-    
+    $sleepInterval = 5
     $percentComplete = 0
+
     while($percentComplete -lt 100) {
     	Start-Sleep -Seconds $sleepInterval
     	$currentSize = 0
     	$currentFile = ''
-    	Get-ChildItem "$swmPath" | ForEach-Object {
+	Get-ChildItem $swmPath | ForEach-Object {
     	    $currentSize += $_.Length
     	    $currentFile = $_.Name
     	}
@@ -595,10 +636,15 @@ function Get-USB-Devices {
     }
 }
 
-function Generate-XML-File {
+function Encode-Hex {
     param (
-	[string]$OutputPath = ".\autounattend.xml"
+	[string]$inputString
     )
+    $hexString = -join ($inputString.toCharArray() | ForEach-Object { "{0:X2}" -f [int][char]$_ })
+    return $hexString
+}
+
+function Get-Config-Macros {
 
     if (-not $hostname) {
 	Write-Error "missing hostname (HOST environment var or -hostname command line option)"
@@ -626,6 +672,10 @@ function Generate-XML-File {
 	    $this.Pattern = "__${Name}__"
 	    if ($Name -eq "PRODUCT_KEY" ) {
 		    $this.Pattern = "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+	    } elseif ($Name -eq "WIFI_SSID_HEX") {
+		$this.Raw = $Value
+		$this.Pattern = Encode-Hex "__WIFI_SSID__"
+		$this.Value = Encode-Hex ${Value}
 	    } elseif ($Name -eq "ADMINISTRATOR_PASSWORD" ) {
 		    $this.Raw = $Value
 		    $this.Suffix = $Suffix
@@ -648,32 +698,114 @@ function Generate-XML-File {
 	if ($macro -eq "ADMINISTRATOR_PASSWORD") {
 	    $macros.Add([Macro]::new($macro, $value, "Password"))
 	    $macros.Add([Macro]::new($macro, $value, "AdministratorPassword"))
+	} elseif ($macro -eq "WIFI_SSID") {
+	    $macros.Add([Macro]::new($macro, $value, ""))
+	    $macros.Add([Macro]::new("WIFI_SSID_HEX", $value, ""))
 	} else {
 	    $macros.Add([Macro]::new($macro, $value, ""))
 	}
     }
 
-    function Expanded {
-	param (
-	    [Parameter(Mandatory=$true)][string]$Line
-	)
-	# don't modify the comment line
-	if ($Line -match "^\s*<!--.*-->$") {
-	    return $Line
-	}
-	foreach ($macro in $macros) {
-	    if ($Line -match $macro.Pattern) {
-		$result = $Line -replace $macro.Pattern, $macro.Value
-		Write-Host "Expanding $($macro.Name)"
-		return $result
-	    }
-	}
-	return $Line
-    }
-
-    (Get-Content -Path (Verified-File $xml_template) -Raw) -split "`n" | ForEach-Object { Expanded -Line $_ } | Set-Content -Path $OutputPath -Encoding ASCII
+    return $macros
 }
 
+function Generate-XML-File {
+    param (
+	[Parameter(Mandatory=$true)][string]$output_file = $xml_response
+    )
+    $macros = Get-Config-Macros 
+    function Expanded {
+	param (
+	    [string]$Line=""
+	)
+	if ($Line -Match '^\s*$') {
+	    return ""
+	}
+	# don't modify the comment line
+	if ($Line -match '^\s*<!--.*') {
+	    return $Line
+	}
+	$expandedLine = $Line
+	foreach ($macro in $macros) {
+	    $name = $macro.Name
+	    if ($expandedLine -match $macro.Pattern) {
+		#Write-Host "Expanding ${name}"
+		#Write-Host "   Before: ${expandedLine}"
+		$expandedLine = $expandedLine -replace $macro.Pattern, $macro.Value
+		#Write-Host "    After: ${expandedLine}"
+	    }
+	}
+	# replace wifi security type 
+		
+	#if ($expandedLine -match '^\s*&lt;authentication&gt;([A-Z0-9]*).*$') {
+	#if ($expandedLine -match 'authentication(.*)' ) {
+	if ($expandedLine -match '^(\s*&lt;authentication&gt;)([^&]*)(&lt;/authentication&gt;\s*)$')  {
+	    $expandedLine = $matches[1] + (Get-Macro-Value "WIFI_SECURITY_TYPE" -Default $default_wifi_security_type) + $matches[3]
+	}
+	return $expandedLine
+    }
+    (Get-Content -Path (Verified-File $xml_template_file) -Raw) -split "`n" | ForEach-Object { Expanded -Line $_ } | Set-Content -Path $output_file -Encoding ASCII
+}
+
+function Get-Macro-Value {
+    param (
+        [Parameter(Mandatory=$true)][string]$Key,
+	[string]$Default
+    )
+    $macros = Get-Config-Macros 
+    foreach ($macro in $macros) {
+	if ($macro.Name -eq $Key) {
+	    return $macro.Value
+	}
+    }
+    if ($PSBoundParameters.ContainsKey('Default')) {
+	return $Default
+    }
+    Write-Error "Macro not found: $Key"
+    exit 1
+}
+
+function Write-ISO-Image {
+    $source_path = "$(Verified-Directory (Mounted-ISO-Path))"
+    $staging_path = "$(Verified-Directory ${iso_staging_path} -Create)"
+    Robo-Copy $source_path $staging_path
+    Customize-Install-Files $staging_path
+    $boot_file = (Verified-File ".\assets\bin\etfsboot.com")
+    $efi_file = (Verified-File ".\assets\bin\efisys.bin")
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $iso_basename = [System.IO.Path]::GetFileNameWithoutExtension((Configured-ISO-Image-File))
+    $target_iso = "$(Verified-Directory $iso_dist_path -Create)${iso_basename}_autoinstall_${hostname}_${timestamp}.iso"
+    
+    # multiboot ISO
+    #Run-Command $oscdimg_bin "-m -o -u2 -udfver102 -bootdata:2#p0,e,b${boot_file}#pEF,e,b${efi_file} $staging_path $target_iso"
+
+    # UEFI only ISO
+    Run-Command $oscdimg_bin "-m -o -u2 -udfver102 -bootdata:1#pEF,e,b${efi_file} $staging_path $target_iso"
+}
+
+function Get-Generator-DLL {
+    if (Test-Path -Path $generator_dll) {
+	return
+    }
+    $url = 'https://api.github.com/repos/cschneegans/unattend-generator/actions/artifacts'
+    $accept = "application/vnd.github.v3+json"
+    $auth = "token ${env:GH_TOKEN}"
+    $headers = @{ 
+	"Accept" = $accept
+	"Authorization" = $auth
+    }
+    $response = Invoke-RestMethod -Uri $url -Method Get -Headers $headers
+    $artifact_url = ""
+    $latest = $response.Artifacts[0]
+    $artifact = Invoke-RestMethod -uri $latest.url -Method Get -Headers $headers
+    Invoke-WebRequest -Uri $latest.archive_download_url -Method Get -Headers $headers -OutFile $generator_dll
+    if (-not (Test-Path -Path $generator_dll)) {
+	Write-Error "failed downloading generator dll"
+	exit 1
+    }
+    Unblock-File -Path $generator_dll
+    return
+}
 
 switch ($Command) {
     "build" {
@@ -714,15 +846,17 @@ switch ($Command) {
 	Get-USB-Devices | Format-Table | Out-Host
     }
     "generate" {
-	Generate-XML-File
+	#Get-Generator-DLL
+	Generate-XML-File ".\assets\autounattend.xml"
+    }
+    "write-iso" {
+	Write-ISO-Image
     }
     "help" {
-	Write-Host "Commands: build format sync update mount-iso dismount-iso show-iso is-iso-mounted iso-drive help"
+	Write-Host "Commands: build format generate lsusb sync update mount-iso dismount-iso show-iso is-iso-mounted iso-drive write-iso help"
     }
     default {
 	Write-Error "unexpected command: ${Command}"
     }
 }
-
-
 

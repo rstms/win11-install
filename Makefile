@@ -2,8 +2,9 @@
 
 psh = dotenv powershell.exe -ExecutionPolicy RemoteSigned '.\build-usb-installer.ps1'
 
-winiso = assets/iso/Win11_25H2_English_x64_v2.iso
+winiso := $(shell find assets -type f -name *.iso | head -1)
 oem_dir = assets/oem/Users/Public/rstms
+hostname := $(shell awk <.env -F= '/^HOST=/{print $$2}')
 
 oem_filenames = \
   Winhance.Installer.exe \
@@ -14,6 +15,7 @@ oem_filenames = \
   update-anydesk.ps1
 
 oem_files = $(foreach f,$(oem_filenames),$(oem_dir)/$(f))
+secrets_files = $(wildcard secrets/$(hostname)/*)
 
 default:
 	@echo
@@ -22,6 +24,9 @@ default:
 	@echo format - select target USB and format
 	@echo sync - sync target USB filesystems with source ISO
 	@echo update - customize target USB with autounattend.xml and OEM directory
+	@echo
+	@echo iso=$(winiso)
+	@echo hostname=$(hostname)
 
 lsusb:
 	@$(psh) lsusb
@@ -50,6 +55,11 @@ sync: .usb_formatted
 update: .usb_formatted assets/template.xml $(oem_files)
 	$(psh) update
 
+dist/win11-install-$(hostname).iso: assets/template.xml $(oem_files)
+	$(psh) write-iso
+
+iso: dist/win11-install-$(hostname).iso
+
 .iso_mounted: $(winiso)
 	$(psh) mount-iso
 	@touch $@
@@ -61,7 +71,7 @@ umount:
 	rm -f .iso_mounted
 
 show:
-	$(psh) show-iso
+	@$(psh) show-iso
 
 $(winiso):
 	mkdir -p $(dir $(winiso))
@@ -82,12 +92,16 @@ $(oem_dir)/bootstrap.cmd:
 	echo >'$@' 'cd C:\users\public\rstms'
 	echo >>'$@' 'msiexec /package c:\users\public\rstms\reliance-anydesk-client.msi /passive'
 	echo >>'$@' 'c:\users\public\rstms\Winhance.Installer.exe /NOICONS /ALLUSERS /SILENT'
-	echo >>'$@' 'winget install --silent Microsoft.Sysinternals.PsTools'
-	echo >>'$@' 'psshutdown -accepteula -nobanner -t 3 -r'
+	#echo >>'$@' 'winget install --silent Microsoft.Sysinternals.PsTools'
+	echo >>'$@' 'shutdown /r /f /t 000'
+
+template-keys:
+	@sed -n <assets/template.xml 's/^.*\(__[^_].*[^_]__\).*$$/\1/p'
 
 clean: umount
-	rm -f .iso_mounted .usb_formatted assets/oem/bootstrap.cmd
+	rm -f .iso_mounted .usb_formatted assets/oem/bootstrap.cmd assets/autounattend.xml
 
 sterile: clean
-	rm -f $(winiso) assets/oem/reliance-anydesk-client.msi assets/oem/Winhance.Installer.exe
+	rm -f $(winiso) assets/oem/reliance-anydesk-client.msi assets/oem/Winhance.Installer.exe  
+	rm -rf assets/staging assets/wim dist
 
