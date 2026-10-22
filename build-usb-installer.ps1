@@ -6,11 +6,11 @@ param (
     [string]$IsoImage,
     [string]$xml_template_file = ".\assets\template.xml",
     [string]$xml_response_file = ".\staging\autounattend.xml",
+    [string]$hosts_root = ".\hosts\",
     [string]$split_wim_path = ".\staging\wim\",
     [string]$iso_staging_path = ".\staging\setup\",
     [string]$iso_dist_path = ".\dist\",
     [string]$oem_src_path = ".\assets\oem\",
-    [string]$secrets_root = ".\secrets",
     [string]$generator_dll = ".\assets\bin\UnattendGenerator.dll",
     [string]$default_wifi_security_type = "WPA3SAE",
     [string]$hostname = ${env:HOST},
@@ -650,8 +650,8 @@ function Get-Config-Macros {
 	Write-Error "missing hostname (HOST environment var or -hostname command line option)"
     }
     
-    $secrets_dir = Verified-Directory "$(Verified-Directory $secrets_root)\${hostname}"
-    
+    $secrets_dir = Verified-Directory $(Verified-Directory "${hosts_root}${hostname}\secrets\")
+
     function Encoded {
 	param (
 	    [string]$Value

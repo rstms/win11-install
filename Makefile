@@ -3,19 +3,10 @@
 psh = dotenv powershell.exe -ExecutionPolicy RemoteSigned '.\build-usb-installer.ps1'
 
 winiso := $(shell find assets -type f -name *.iso | head -1)
-oem_dir = assets/oem/Users/Public/rstms
 hostname := $(shell awk <.env -F= '/^HOST=/{print $$2}')
 
-oem_filenames = \
-  Winhance.Installer.exe \
-  bootstrap.cmd \
-  customize.winhance \
-  reliance-anydesk-client.msi \
-  update-anydesk.lnk \
-  update-anydesk.ps1
-
-oem_files = $(foreach f,$(oem_filenames),$(oem_dir)/$(f))
-secrets_files = $(wildcard secrets/$(hostname)/*)
+oem_dir = assets/oem/Users/Public/rstms
+oem_files = $(wildcard $(oem_dir)/*)
 
 default:
 	@echo
@@ -98,10 +89,20 @@ $(oem_dir)/bootstrap.cmd:
 template-keys:
 	@sed -n <assets/template.xml 's/^.*\(__[^_].*[^_]__\).*$$/\1/p'
 
+download-template:
+	scp 'beaker:$(shell ssh beaker ls -t Downloads/autounattend*.xml | head -1)' assets/template.xml
+	ssh beaker rm -f Downloads/autounattend*.xml
+
+upload-template:
+	scp assets/template.xml beaker:Downloads
+
+
 clean: umount
-	rm -f .iso_mounted .usb_formatted assets/oem/bootstrap.cmd assets/autounattend.xml
+	rm -f .iso_mounted .usb_formatted assets/autounattend.xml 
+	rm -rf dist && mkdir dist
 
 sterile: clean
 	rm -f $(winiso) assets/oem/reliance-anydesk-client.msi assets/oem/Winhance.Installer.exe  
-	rm -rf assets/staging assets/wim dist
+	rm -rf assets/staging && mkdir assets/staging
+	rm -rf assets/wim && mkdir assets/wim
 
