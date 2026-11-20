@@ -1,0 +1,6 @@
+# TODO 
+
+modify autounattend.xml config to halt and require user confirmation when partitions exist
+preload wifi xml config file from command: 'netsh.exe wlan export profile key=clear'
+
+
