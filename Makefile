@@ -106,3 +106,5 @@ sterile: clean
 	rm -rf assets/staging && mkdir assets/staging
 	rm -rf assets/wim && mkdir assets/wim
 
+upload-iso:
+	scp $(shell ls -t dist/*.iso | head -1) beaker:h:/vmware/iso

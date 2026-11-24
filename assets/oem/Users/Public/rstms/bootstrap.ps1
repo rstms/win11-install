@@ -4,8 +4,9 @@ param (
 )
 
 $scriptName ="$([System.IO.Path]::GetFileName($MyInvocation.MyCommand.Path))"
-$logFile = "c:\users\public\rstms\bootstrap.log"
-cd "c:\users\public\rstms"
+$cfgDir = "c:\users\public\rstms"
+$logFile = "${cfgDir}\bootstrap.log"
+
 
 function Write-Log {
     param (
@@ -51,13 +52,32 @@ function Run-Command {
 function Admin-First-Login {
 
     Write-Log "installing anydesk client"
-    Run-Command msiexec "/package c:\users\public\rstms\reliance-anydesk-client.msi /passive /norestart /l* c:\users\public\rstms\anydesk-install.log"
+    Write-Progress -Activity "Administrator First Login" -Status "Installing Anydesk Client..."
+    Run-Command msiexec "/package ${cfgDir}\reliance-anydesk-client.msi /passive /norestart /l* ${cfgDir}\anydesk-install.log"
     Write-Log "anydesk client installed"
 
     Write-Log "installing winhance"
-    Run-Command c:\users\public\rstms\Winhance.Installer.exe "/NOICONS /ALLUSERS /SILENT"
+    Write-Progress -Activity "Administrator First Login" -Status "Installing Winhance..."
+    Run-Command ${cfgDir}\Winhance.Installer.exe "/NOICONS /ALLUSERS /SILENT"
     Write-Log "winhance installed"
 
+    Write-Log "executing winhance install"
+    Write-Progress -Activity "Administrator First Login" -Status "Executing winhance install..."
+    Run-Command PowerShell ${cfgDir}\apply-winhance-config.ps1 install
+    Write-Log "winhance install complete"
+
+    Write-Log "executing winhance uninstall"
+    Write-Progress -Activity "Administrator First Login" -Status "Executing winhance uninstall..."
+    Run-Command PowerShell ${cfgDir}\apply-winhance-config.ps1 remove
+    Write-Log "winhance uninstall complete"
+
+    Write-Log "installing vmware workstation"
+    Write-Progress -Activity "Administrator First Login" -Status "Installing VMware Workstation..."
+    $vmwareInstaller = Get-ChildItem -Path "${cfgDir}\vmware-workstation-*.exe" -File | Select-Object -First 1
+    Run-Command $vmwareInstaller "/passive /norestart /l ${cfgDir}\vmware-install.log /v `"/qn EULAS_AGREED=1 AUTOSOFTWAREUPDATE=1 DATACOLLECTION=0`""
+    Write-Log "vmware workstation installed"
+
+    Write-Progress -Activity "Administrator First Login" -Status "Restarting..."
     Write-Log "restarting in 5 seconds..."
     shutdown /r /f /t 005
 }
@@ -75,7 +95,10 @@ function Modify-Default-User {
 }
 
 try {
+
     Write-Log "executing ${Command}"	
+    cd $cfgDir
+
     switch ($Command) {
 	"admin-first-login" {
 	    Admin-First-Login
